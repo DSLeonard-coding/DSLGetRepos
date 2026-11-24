@@ -1,0 +1,88 @@
+.idea/DSLGetRepos.iml
+*.swp
+*.kate-swp
+debug/geotree.txt
+cmake-build*/**
+build*/**
+/share
+**/dependencies/**
+
+build/
+!build/.gitkeep
+latex/
+# Ignore workspace and user-specific files
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries/
+.idea/usage.statistics.xml
+.idea/shelf/
+
+# Ignore local history and caches
+.idea/caches/
+.idea/compiler.xml
+.idea/gradle.xml
+.idea/jsLibraryMappings.xml
+
+# Ignore run/debug user-specific configs (if not shared)
+#.idea/runConfigurations/*_local.xml
+
+# Ignore other user-specific or temporary files
+.idea/dataSources/
+.idea/dataSources.ids
+.idea/dataSources.local.xml
+.idea/sqlDataSources.xml
+.idea/dynamic.xml
+.idea/uiDesigner.xml
+.idea/webResources.xml
+/compile_commands.json
+/debug/vis.mac
+/run/MCout/Co60_500.root
+/public/*
+/docs
+/docs/html/*
+/docs/images/*
+/docs/Doxyfile
+
+
+.vscode/*.log
+tmp/
+
+CVS
+
+
+
+lib/
+!lib/.gitkeep
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
