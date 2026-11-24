@@ -6,7 +6,8 @@ include_guard(GLOBAL)
 
 include("${CMAKE_CURRENT_LIST_DIR}/CPM.cmake")
 set(CPM_INCLUDE_ALL_IN_PACKAGE_LOCK ON)
-CPMUsePackageLock(${CMAKE_SOURCE_DIR}/package-lock.cmake)
+set(CPM_LOCK_FILE "${CMAKE_SOURCE_DIR}/package-lock.cmake" CACHE FILEPATH "CPM lock file")
+CPMUsePackageLock(${CPM_LOCK_FILE})
 
 option(DGR_LINK_RELATIVE "Create relative symlinks (survive moving the tree)" ON)
 
@@ -91,7 +92,7 @@ function(make_symlink link target)
 endfunction()
 
 
-# dsl_get_repo(NAME REPO TAG [DIR])
+# dsl_repo_impl(NAME REPO TAG DOWNLOAD_ONLY_MODE [DIR] CPM_ARGS)
 #
 # The real source (the "home") is always ${DGR_REPOS_DIR}/${NAME}, or the user's
 # CPM_<NAME>_SOURCE if set.  It is returned in ${NAME}_SOURCE_DIR.
@@ -100,7 +101,7 @@ endfunction()
 # is where the calling project wants the repo to appear.  If that is not the home,
 # it becomes a symlink to the home.  Relative paths are relative to the calling
 # CMakeLists.txt (CMAKE_CURRENT_SOURCE_DIR).
-function(dsl_get_repo NAME REPO TAG)
+function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
     # where real sources live: only a cache value (-DDGR_REPOS_DIR=...) can move it
     if(DEFINED CACHE{DGR_REPOS_DIR})
         get_filename_component(store "$CACHE{DGR_REPOS_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
@@ -118,8 +119,10 @@ function(dsl_get_repo NAME REPO TAG)
     endif()
 
     # where the caller wants it to appear (a symlink unless it is the home)
-    if(ARGC GREATER 3)
-        set(wanted "${ARGV3}")
+    cmake_parse_arguments(PARSE_ARGV 4 _dgr "" "DIR" "")
+
+    if(DEFINED _dgr_DIR)
+        set(wanted "${_dgr_DIR}")
     elseif(DEFINED PROJECT_NAME AND DEFINED DGR_${PROJECT_NAME}_REPOS_DIR)
         set(wanted "${DGR_${PROJECT_NAME}_REPOS_DIR}/${NAME}")
     else()
@@ -149,8 +152,22 @@ function(dsl_get_repo NAME REPO TAG)
         endif()
     endif()
 
-    CPMAddPackage(NAME ${NAME} GIT_REPOSITORY ${REPO} GIT_TAG ${TAG}
-            SOURCE_DIR "${home}" DOWNLOAD_ONLY YES)
+    foreach(arg IN LISTS _dgr_UNPARSED_ARGUMENTS)
+        if(arg STREQUAL "SOURCE_DIR" OR arg STREQUAL "DOWNLOAD_ONLY"
+                OR arg STREQUAL "NAME" OR arg STREQUAL "GIT_REPOSITORY"
+                OR arg STREQUAL "GIT_TAG")
+            message(FATAL_ERROR
+                    "dsl_get_repo: Direct pass through of CPM ${arg} arg is not supported")
+        endif()
+    endforeach()
+
+    CPMAddPackage(
+            NAME ${NAME}
+            GIT_REPOSITORY ${REPO}
+            GIT_TAG ${TAG}
+            SOURCE_DIR "${home}"
+            DOWNLOAD_ONLY ${DOWNLOAD_ONLY_MODE}
+            ${_dgr_UNPARSED_ARGUMENTS})
 
     if(NOT overridden)
         git_ignore_entry("${home}")
@@ -162,6 +179,24 @@ function(dsl_get_repo NAME REPO TAG)
     endif()
 
     # CPMAddPackage's results landed in this function's scope; pass them on to the caller
+    foreach(var SOURCE_DIR BINARY_DIR ADDED)
+        set(${NAME}_${var} "${${NAME}_${var}}" PARENT_SCOPE)
+    endforeach()
+    set(CPM_LAST_PACKAGE_NAME "${CPM_LAST_PACKAGE_NAME}" PARENT_SCOPE)
+endfunction()
+
+# DOWNLOAD_ONLY mode)
+function(dsl_get_repo NAME REPO TAG)
+    _dsl_repo_impl("${NAME}" "${REPO}" "${TAG}" YES ${ARGN})
+    foreach(var SOURCE_DIR BINARY_DIR ADDED)
+        set(${NAME}_${var} "${${NAME}_${var}}" PARENT_SCOPE)
+    endforeach()
+    set(CPM_LAST_PACKAGE_NAME "${CPM_LAST_PACKAGE_NAME}" PARENT_SCOPE)
+endfunction()
+
+# Fetch and add targets into the build (no DOWNLOAD_ONLY YES)
+function(dsl_add_repo NAME REPO TAG)
+    _dsl_repo_impl("${NAME}" "${REPO}" "${TAG}" NO ${ARGN})
     foreach(var SOURCE_DIR BINARY_DIR ADDED)
         set(${NAME}_${var} "${${NAME}_${var}}" PARENT_SCOPE)
     endforeach()
