@@ -94,9 +94,9 @@ CPM does most of the work here, but DSLGetRepos adds fixed symlink paths relativ
 For what it's worth, CPM is relatively new, around 2019, based on cmake FetchContent that only arrived in 2018.
 
 ## Core CPM features inherited:  
-- Auto-download of dependencies at cmake configure time.  
-- No submodule updates to forget when switching branches.
-- Provides transitive dependency handling, locking, and overrides, without duplication or multiple versions of deps.
+- Auto-download of dependencies at cmake configure time, including any recursive submodules of deps.  
+- No submodule updates to forget when switching branches, because the build system does it.
+- Provides transitive dependency handling, locking(reproducible deps per commit), and overrides, without duplication or multiple versions of deps.
 - Like submodules, can pull from any kind of source, doesn't have to be cmake or CPM. 
 
 ## DSLGetRepos features  

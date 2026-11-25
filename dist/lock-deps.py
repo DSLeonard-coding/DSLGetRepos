@@ -12,18 +12,21 @@
   lock-deps.py update --build BUILD (--all | NAME ...) [same options]
   lock-deps.py check  [--lock FILE]
 
-sync:   1. add packages from BUILD/cpm-package-lock.cmake that are in neither sources nor lock
-           (a locked package's entry there reflects the lock, so it is never copied)
-        2. lock every package that is in sources but not in the lock
+sync:   1. add packages from BUILD/cpm-package-lock.cmake that are missing from package-sources.cmake
+        2. lock every package that is _then_ in sources but not in the lock
         Existing sources and lock entries are never touched.
-update: like sync, then re-resolve the named packages (or all) from their ref in the
-        sources file to the current tip. Edit a ref in sources, then update that package.
+
+update: First runs sync, then updates locks in specified package (or --all) in package-lock.cmake
+        to the latest commit on the tip of the branch specified in package-sources.cmake.
+        You run this to move to the latest or can change the branch first and use it to switch to,
+        for example, develop branch.
 
 check:  clone each locked repo (blobless, bare, temporary) and verify the pinned SHA exists,
         i.e. what a fresh CPM configure needs. Catches force-pushed or deleted commits.
 
---configure runs `cmake BUILD` first so the build dir's cpm-package-lock.cmake is current.
-Needs CPM_INCLUDE_ALL_IN_PACKAGE_LOCK=ON (set by --configure).
+--configure runs `cmake BUILD` with  CPM_INCLUDE_ALL_IN_PACKAGE_LOCK=ON first so the build dir's
+                  cpm-package-lock.cmake is current.  It's not necessary if you already configured.
+                 dsl_get_repo() already forces CPM_INCLUDE_ALL_IN_PACKAGE_LOCK=ON
 """
 import argparse
 import os

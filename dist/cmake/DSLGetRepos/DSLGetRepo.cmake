@@ -161,6 +161,17 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         endif()
     endforeach()
 
+    # STRIP DOWNLOAD only option from locks
+    if(DEFINED CPM_DECLARATION_${NAME})
+        set(decl "${CPM_DECLARATION_${NAME}}")
+        list(FIND decl DOWNLOAD_ONLY idx)
+        if(NOT idx EQUAL -1)
+            math(EXPR val_idx "${idx} + 1")
+            list(REMOVE_AT decl ${idx} ${val_idx})
+            set(CPM_DECLARATION_${NAME} "${decl}")
+        endif()
+    endif()
+
     CPMAddPackage(
             NAME ${NAME}
             GIT_REPOSITORY ${REPO}
