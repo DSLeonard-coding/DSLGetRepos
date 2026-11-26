@@ -8,6 +8,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/CPM.cmake")
 set(CPM_INCLUDE_ALL_IN_PACKAGE_LOCK ON)
 set(CPM_LOCK_FILE "${CMAKE_SOURCE_DIR}/package-lock.cmake" CACHE FILEPATH "CPM lock file")
 CPMUsePackageLock(${CPM_LOCK_FILE})
+_dgr_strip_all_download_only()
 
 option(DGR_LINK_RELATIVE "Create relative symlinks (survive moving the tree)" ON)
 
@@ -46,6 +47,21 @@ function(git_ignore_entry path)
     if(NOT "${entry}" IN_LIST lines)
         file(APPEND "${gitignore}" "${entry}\n")
     endif()
+endfunction()
+
+function(_dgr_strip_all_download_only)
+    get_cmake_property(vars VARIABLES)
+    foreach(var IN LISTS vars)
+        if(var MATCHES "^CPM_DECLARATION_.+" AND NOT "${${var}}" STREQUAL "")
+            set(decl "${${var}}")
+            list(FIND decl DOWNLOAD_ONLY idx)
+            if(NOT idx EQUAL -1)
+                math(EXPR val_idx "${idx} + 1")
+                list(REMOVE_AT decl ${idx} ${val_idx})
+                set(${var} "${decl}" PARENT_SCOPE)
+            endif()
+        endif()
+    endforeach()
 endfunction()
 
 
@@ -161,15 +177,9 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         endif()
     endforeach()
 
-    # STRIP DOWNLOAD only option from locks
-    if(DEFINED CPM_DECLARATION_${NAME})
-        set(decl "${CPM_DECLARATION_${NAME}}")
-        list(FIND decl DOWNLOAD_ONLY idx)
-        if(NOT idx EQUAL -1)
-            math(EXPR val_idx "${idx} + 1")
-            list(REMOVE_AT decl ${idx} ${val_idx})
-            set(CPM_DECLARATION_${NAME} "${decl}")
-        endif()
+    # The declaration replaces this call's args, so put the call's mode back
+    if(NOT "${CPM_DECLARATION_${NAME}}" STREQUAL "")
+        list(APPEND CPM_DECLARATION_${NAME} DOWNLOAD_ONLY ${DOWNLOAD_ONLY_MODE})
     endif()
 
     CPMAddPackage(
