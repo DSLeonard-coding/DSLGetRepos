@@ -1,6 +1,5 @@
-
-# DSLGetRepos  D.S. Leonard, 2026, MIT with attribution
-https://www.github.com/DSLeonard-coding/DSLGetRepos
+# DSLGetRepos
+D.S. Leonard, 2026, MIT with attribution
 
 Drop-in  "one-liner" git-submodule replacement, an in-tree-wrapper to modern CPM package management for C++, providing fixed submodule-like linked source paths, with added uv-like locking functionality.
 
