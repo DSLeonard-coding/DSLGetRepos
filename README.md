@@ -1,9 +1,10 @@
 
 # DSLGetRepos  D.S. Leonard, 2026, MIT with attribution
+https://www.github.com/DSLeonard-coding/DSLGetRepos
 
-Drop-in  "one-liner" git-submodule replacement, an in-tree-wrapper to modern CPM package management for C++, providing fixed submodule-like linked source paths, with added uv-like locking functonality.
+Drop-in  "one-liner" git-submodule replacement, an in-tree-wrapper to modern CPM package management for C++, providing fixed submodule-like linked source paths, with added uv-like locking functionality.
 
-**This is ALPHA, anything may change, and I may force push, but it works for me. Reports are appreciated***  
+**This is ALPHA, anything may change, even the name and URL, and I may force push, but it works for me. Reports are appreciated***  
 
 The original CPM.cmake managed by Lars Melchior, is included with this from: https://github.com/cpm-cmake/cpm.cmake
 
@@ -14,7 +15,7 @@ Uses download-only by default (options may come), so its compatible with your ex
 
 ## Installation:
 This is the project manager so you can't project manage it, maybe a cookie cutter someday lol.
-(or better, something like https://github.com/DSLeonard-coding/DSLeonard-pylaunch) )
+(or better, something like https://github.com/DSLeonard-coding/DSLeonard-pylaunch) 
 
 From your projects root just do this to copy in the files:
 ```
@@ -30,17 +31,25 @@ include(cmake/CPM/DSLGetRepo.cmake)
 
 Then just load a dependency project, Ex, other userful .cmake files included in DSLeonard-cmake:
 ```
-dsl_get_repo( DSLeonard-cmake https://github.com/DSLeonard-coding/DSLeonard-cmake master)
-add_subdirectory(${DSLeonard-cmake_SOURCE_DIR})
-```
-or the one line form:
-```
 dsl_add_repo( DSLeonard-cmake https://github.com/DSLeonard-coding/DSLeonard-cmake master)
 ```
-The two commands are identical, except the former passes `DOWNLOAD_ONLY YES`to CPM, where the latter simply calls add_subdirectory automatically.  They both provide the resolved source directory in \<NAME>_SOURCE_DIR, and the latter provides the binary build directory (second paramter to add_subdirectory) in \<NAME>_BINARY_DIR, where \<NAME> is the first argument to dsl_get_repo. 
+or for ssh access (for **private repos**) use the git syntax:
+```
+dsl_add_repo( DSLeonard-cmake git@github.com:DSLeonard-coding/DSLeonard-cmake master)
+```
+(In the future I hope to auto-switch to ssh when needed, so the syntax won't need to change, but there are some difficulties with implementing that. )
+
+or use the wrapper to CPM's DOWNLOAD_ONLY option:
+```
+dsl_get_repo( DSLeonard-cmake https://github.com/DSLeonard-coding/DSLeonard-cmake master)
+```
+
+The two commands are identical, except the latter passes `DOWNLOAD_ONLY YES`to CPM, where the former simply calls add_subdirectory automatically.  They both provide the resolved source directory in \<NAME>_SOURCE_DIR, and the former provides the binary build directory (second parameter to add_subdirectory) in \<NAME>_BINARY_DIR, where \<NAME> is the first argument to dsl_get_repo.  
+
+It's best to only use dsl_get_repo for non-project repos. You can use it followed by add_subdirectory, but my understanding is if multiple projects attempt to add the dependency, and any are explicit add_subdirectory() calls, you will have either a collision or no add_subdirectory at all depending on the combination. Using dsl_add_repo (CPM with DOWNLOAD_ONLY unset), FetchContent (used by CPM) adds each package once and makes it visible to every project. The first request decides how it is configured."
 
 
-**If you need to fix the path (to where you had your submodule for example)** see [explicit path parameter](#explicit-path-parameter) below.
+**If you need to fix the path (to where you had your submodule for example)** see [explicit path parameter](#explicit-path-parameter-and-migrating-from-submodules) below.
 
 For the particular package in the example, the add_subdirectory does nothing of value, and I just use the resulting source variable like this:
 
@@ -54,9 +63,9 @@ For any non-cmake package you'll want the `dsl_get_repo` version.
 - The branch can be a tag, sha, or any ref, but it's more flexible to set a branch and use [locking](#locking-and-lock-updating) to point to a commit.
 - The first parameter is the name.  The important thing is that all projects that include the package agree on the name. They don't have to agree on the source or even reference, but the name associates them.  Convention is to use the cmake project name in CMakeLists.txt.
 
-- By default the sources go in `dependencies/`.  For example:  `dependencies/DSleonard-cmake`  
+- By default, the sources go in `dependencies/`.  For example:  `dependencies/DSleonard-cmake`  
 - Even if a lower project has a DSLGetRepo  dep it will go in the top level dependencies, but be sym-linked to all.  
-- Deps that are not themsevles DSLGetRepo or CPM enabled should still work fine, but will use their own build directories, usually in your build directories.  
+- Deps that are not themselves DSLGetRepo or CPM enabled should still work fine, but will use their own build directories, usually in your build directories.  
 - Non-CPM deps from any git repo also work fine.  You will just get the files in dependencies/my_deps, and the path to them.
 - See full CPM documentation.
 
@@ -74,12 +83,12 @@ For any non-cmake package you'll want the `dsl_get_repo` version.
 * [Motivation and Overview](#motivation-and-overview)
 * [Core CPM features inherited:](#core-cpm-features-inherited)
 * [DSLGetRepos features](#dslgetrepos-features)
-* [Explicit path parameter and migrating from submodules.](#explicit-path-parameter-and-migrating-from-submodules-)
+* [Explicit path parameter and migrating from submodules.](#explicit-path-parameter-and-migrating-from-submodules)
 * [Explicit source directories](#explicit-source-directories)
-* [Optional Variables:](#optional-variables)
+* [Optional Variables:](#optional-variables-and-passthrough-arguments-to-cpmfetchcontentexternalproject_add)
 * [Developing overrides](#developing-overrides)
 * [locking and lock updating](#locking-and-lock-updating)
-  * [Tracking development branches.](#tracking-development-branches-)
+  * [Tracking development branches.](#tracking-development-branches)
   * [Installing uv](#installing-uv)
 
 <!---toc end-->
@@ -89,22 +98,22 @@ For any non-cmake package you'll want the `dsl_get_repo` version.
 
 
 ## Motivation and Overview
-CPM does most of the work here, but DSLGetRepos adds fixed symlink paths relative to each dependency tree individually, and improved branch-following and sha updaing.   The first part is a mixed blessing.  For modularity and simplified installs, it's better not to have tight coupling between the directory structures of your projects and their dependencies, which is generally the cmake philosophy.  But a) not everything you want to include is even cmake-based and b) not everything is ideal.    **By fixing symlinks to sources within each dependency we create a stable source layout that matches any legacy submodule layout, or any non-cmake needs, and reduce headache of distributing a directory variable to everything that needs it.** 
+CPM does most of the work here, but DSLGetRepos adds fixed symlink paths relative to each dependency tree individually, and improved branch-following and sha updating.   The first part is a mixed blessing.  For modularity and simplified installs, it's better not to have tight coupling between the directory structures of your projects and their dependencies, which is generally the cmake philosophy.  But a) not everything you want to include is even cmake-based and b) not everything is ideal.    **By fixing symlinks to sources within each dependency we create a stable source layout that matches any legacy submodule layout, or any non-cmake needs, and reduce headache of distributing a directory variable to everything that needs it.** 
 
 For what it's worth, CPM is relatively new, around 2019, based on cmake FetchContent that only arrived in 2018.
 
-## Core CPM features inherited:  
+## Core CPM features inherited:
 - Auto-download of dependencies at cmake configure time, including any recursive submodules of deps.  
 - No submodule updates to forget when switching branches, because the build system does it.
 - Provides transitive dependency handling, locking(reproducible deps per commit), and overrides, without duplication or multiple versions of deps.
 - Like submodules, can pull from any kind of source, doesn't have to be cmake or CPM. 
 
-## DSLGetRepos features  
+## DSLGetRepos features
 - One line configuration per repo. 
 - Supports in-tree build/devel workflow.
 - Optional explicit destination paths allow drop-in replacement for git submodules without changing any directory structure.  **Ie all your symlinks or script references to the source still work!!** (only exceptions are rare commands that can't follow symlinks).
 - Sources are only downloaded once, to top-level dependencies/\<NAME> by default (or ${DGR_REPOS_DIR} if defined), duplicates are symlinked.
-- Along with accompanying scripts, provides follow-braches, relock-commits-to-sha, workflow for transitive/duplicate deps. (IE commits lock dependencies to specific git sha's, but between commits you can auto-update those shas along the branch: inspired by uv lockfiles but also by `git submodules update --remote --recursive`)
+- Along with accompanying scripts, provides follow-branches, relock-commits-to-sha, workflow for transitive/duplicate deps. (IE commits lock dependencies to specific git sha's, but between commits you can auto-update those shas along the branch: inspired by uv lockfiles but also by `git submodules update --remote --recursive`)
 - Add .developing file to any dependency directory to develop the dependency repo in-place and prevent automated updates. (be careful to test your development on committed lockfile commit sha's though) 
 - Auto-handles/creates .gitignore entries of dependency directories.
 - Supports Multi-build environments like Clion, with single download (arranges mutex to control concurrent access to CPMAddPackage to avoid git conflicts).
@@ -184,14 +193,14 @@ where cmake-build-release should be replaced with your cmake build directory.
 
 This will create a `package-sources.cmake` and a `package-lock.cmake`
 
-You can update source repos or branches in package-soruces.cmake.  Then you can run lock-deps again to update package-locks.cmake to the specific shas to use for the commit you're about to make. Then when anyone checks out this commit, they will get those shas.  If you use --all then all deps will be updated and locked to their latest versions.  If you only want to udpate some, specify package names instead.
+You can update source repos or branches in package-soruces.cmake.  Then you can run lock-deps again to update package-locks.cmake to the specific shas to use for the commit you're about to make. Then when anyone checks out this commit, they will get those shas.  If you use --all then all deps will be updated and locked to their latest versions.  If you only want to update some, specify package names instead.
 
 
 You should run `lock-deps.py` with `sync` or `update`  at least once before setting .developing in a new source directory.  If a source is overridden (by .developing file or otherwise), the lock file information provided by CPM will not include the source repo, so we can't update it automatically.  Once you have locked once though, we keep the source location in package-sources.cmake.  If you get a package-sources.cmake entry with no url or branch you can just edit it by hand once.  The entries are the same as for CPMAddPacakge.
 
 ### Tracking development branches.
 
-If you need to track a development branch, just change the branch in package-sources.cmake and update the locks.  That's it.  You should of course probaby be committing to a development branch too then. 
+If you need to track a development branch, just change the branch in package-sources.cmake and update the locks.  That's it.  You should of course probably be committing to a development branch too then. 
 
 
 ### Installing uv
