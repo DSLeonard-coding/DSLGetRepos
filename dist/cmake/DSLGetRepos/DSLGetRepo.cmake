@@ -12,6 +12,24 @@ _dgr_strip_all_download_only()
 
 option(DGR_LINK_RELATIVE "Create relative symlinks (survive moving the tree)" ON)
 
+function(_dgr_strip_all_download_only)
+    get_cmake_property(vars VARIABLES)
+    foreach(var IN LISTS vars)
+        if(var MATCHES "^CPM_DECLARATION_.+" AND NOT "${${var}}" STREQUAL "")
+            set(decl "${${var}}")
+            list(FIND decl DOWNLOAD_ONLY idx)
+            if(NOT idx EQUAL -1)
+                math(EXPR val_idx "${idx} + 1")
+                list(REMOVE_AT decl ${idx} ${val_idx})
+                set(${var} "${decl}" PARENT_SCOPE)
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
+# must come after the definition (a function can't be called before it is defined)
+_dgr_strip_all_download_only()
+
 # Sets ${result} (in the caller) to TRUE if `dir` is a working git clone, else FALSE.
 function(is_git_repo dir result)
     set(${result} FALSE PARENT_SCOPE)
