@@ -42,9 +42,10 @@ dsl_add_repo( DSLeonard-cmake git@github.com:DSLeonard-coding/DSLeonard-cmake ma
 or use the wrapper to CPM's DOWNLOAD_ONLY option:
 ```
 dsl_get_repo( DSLeonard-cmake_SRC https://github.com/DSLeonard-coding/DSLeonard-cmake master)
+
 #Optionally add subdirectory or whatever else:
 if(TARGET "DSLeonard-cmake")
-  #Directory providede by dsl_get_repo via CPM:
+  #Directory provided by dsl_get_repo via CPM:
   add_subdirectory(${DSLeonard-cmake_SRC_SOURCE_DIR}) 
 endif
 ```
