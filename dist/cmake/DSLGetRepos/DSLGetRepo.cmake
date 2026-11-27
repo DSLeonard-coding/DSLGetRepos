@@ -224,6 +224,10 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
                 DOWNLOAD_ONLY ${DOWNLOAD_ONLY_MODE}
                 ${_dgr_UNPARSED_ARGUMENTS})
 
+        if(EXISTS "${home}/.developing")
+            message(WARNING "The override is set by the existence of ${home}/.developing\n Delete it to allow auto update." )
+        endif()
+
         if(DOWNLOAD_ONLY_MODE AND first_registration)
             set_property(GLOBAL PROPERTY DGR_FETCHED_${NAME} TRUE)
         endif()
