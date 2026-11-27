@@ -165,9 +165,9 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
     get_filename_component(wanted "${wanted}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
     # serialize across processes (parallel CLion profiles); released when we return
-    file(LOCK "${home}.lock" GUARD FUNCTION TIMEOUT 300 RESULT_VARIABLE locked)
+    file(LOCK ".${home}.lock" GUARD FUNCTION TIMEOUT 300 RESULT_VARIABLE locked)
     if(NOT locked EQUAL 0)
-        message(FATAL_ERROR "dsl_get_repo: timed out waiting for ${home}.lock")
+        message(FATAL_ERROR "dsl_get_repo: timed out waiting for .${home}.lock")
     endif()
 
     foreach(arg IN LISTS _dgr_UNPARSED_ARGUMENTS)
