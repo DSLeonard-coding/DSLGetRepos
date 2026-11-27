@@ -4,6 +4,13 @@ include_guard(GLOBAL)
 #Provides one-liner in-tree wrapper to CPM project management, ie dependency repo fetching.
 # See github.com/DSLeonard-coding/DSLGetRepos   for documentation.
 
+#a better guard that prevents other versions from loading in subprojects:
+get_property(_dgr_already_loaded GLOBAL PROPERTY DSL_GET_REPO_LOADED)
+if(_dgr_already_loaded)
+    return()
+endif()
+set_property(GLOBAL PROPERTY DSL_GET_REPO_LOADED TRUE)
+
 include("${CMAKE_CURRENT_LIST_DIR}/CPM.cmake")
 set(CPM_INCLUDE_ALL_IN_PACKAGE_LOCK ON)
 set(CPM_LOCK_FILE "${CMAKE_SOURCE_DIR}/package-lock.cmake" CACHE FILEPATH "CPM lock file")
