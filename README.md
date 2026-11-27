@@ -30,6 +30,19 @@ include(cmake/CPM/DSLGetRepo.cmake)
 ```
 
 Then just load a dependency project, Ex, other userful .cmake files included in DSLeonard-cmake:
+
+```
+dsl_get_repo( DSLeonard-cmake_SRC https://github.com/DSLeonard-coding/DSLeonard-cmake master)
+```
+and you get the directory in <NAME>_SOURCE_DIR to use as needed. For example:
+```
+if(TARGET "DSLeonard-cmake")
+  add_subdirectory(${DSLeonard-cmake_SRC_SOURCE_DIR}) 
+endif
+```
+That version wraps CPM's DOWNLOAD_ONLY option, and has some advantages because it works with non-project (no CMakeLists.txt) directories, and its easier to control variabes for the add_subdirectory call, but you can do the add_subdirectory
+in one step (and still set variables) with:
+
 ```
 dsl_add_repo( DSLeonard-cmake https://github.com/DSLeonard-coding/DSLeonard-cmake master OPTIONS "SOMEVAR VALUE")
 ```
@@ -39,21 +52,12 @@ dsl_add_repo( DSLeonard-cmake git@github.com:DSLeonard-coding/DSLeonard-cmake ma
 ```
 (In the future I hope to auto-switch to ssh when needed, so the syntax won't need to change, but there are some difficulties with implementing that. )
 
-or use the wrapper to CPM's DOWNLOAD_ONLY option:
-```
-dsl_get_repo( DSLeonard-cmake_SRC https://github.com/DSLeonard-coding/DSLeonard-cmake master)
 
-#Optionally add subdirectory or whatever else:
-if(TARGET "DSLeonard-cmake")
-  #Directory provided by dsl_get_repo via CPM:
-  add_subdirectory(${DSLeonard-cmake_SRC_SOURCE_DIR}) 
-endif
-```
+The two commands (get and add versions) are identical, except the former passes `DOWNLOAD_ONLY YES`to CPM, where the latter simply calls add_subdirectory automatically, but only the first time it is requested, automatically avoiding duplicate call errors without the need for the conditional guard. **Unlike with direct, CPM, you _can_ mix use of these for the same package name, even when using lock files!** Notably dsl_add_repo loses access to variables that are PARENT_SCOPE in the add_subdirectory call, but you can only do that from one place anyway, even with git-submodules. (future possibilities exist).
 
-The two commands (get and add version) are identical, except the latter passes `DOWNLOAD_ONLY YES`to CPM, where the former simply calls add_subdirectory automatically, but only the first time it is requested, automatically avoiding duplicate call errors. **Unlike with direct, CPM, you _can_ mix use of these for the same package name!** They both provide the resolved source directory in \<NAME>_SOURCE_DIR, and the former provides the binary build directory (second parameter to add_subdirectory) in \<NAME>_BINARY_DIR, where \<NAME> is the first argument to dsl_get_repo. 
+They both provide the resolved source directory in \<NAME>_SOURCE_DIR, and the latter provides the binary build directory (second parameter to add_subdirectory) in \<NAME>_BINARY_DIR, where \<NAME> is the first argument to dsl_get_repo. 
 
-dsl_get_repo is the more direct git-submodule replacement, and is necessary for packages that don't have a CMakeLists.txt, but dsl_add_repo avoids duplicate add_subdirectory calls without you needing an if(TARGET MYTARGET) guard. Notably dsl_add_repo loses access to variables that are PARENT_SCOPE in the add_subdirectory call, but you can only do that from one place anyway, even with git-submodules. (future possibilities exist).
-
+ 
 **If you need to fix the path (to where you had your submodule for example)** see [explicit path parameter](#explicit-path-parameter-and-migrating-from-submodules) below.
 
 For the particular package in the example, the add_subdirectory does nothing of value, and I just use the resulting source variable like this:
