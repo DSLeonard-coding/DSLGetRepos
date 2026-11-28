@@ -181,6 +181,38 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         endif()
     endforeach()
 
+    # Handle the top-level project asked for by name.  It is already being configured
+    # from CMAKE_SOURCE_DIR: nothing to fetch, and add_subdirectory on it would recurse.
+    # Treat it as an already-added dependency: register it with CPM, link it where
+    # the caller wants it.
+    if(DEFINED CMAKE_PROJECT_NAME AND "${NAME}" STREQUAL "${CMAKE_PROJECT_NAME}")
+        set(root_home "${CMAKE_SOURCE_DIR}")
+
+        # `wanted` : default to
+        # "where it already is", so a link is made only if DIR or
+        # DGR_<PROJECT_NAME>_REPOS_DIR asked for one.
+        if(NOT DEFINED _dgr_DIR AND NOT (DEFINED PROJECT_NAME
+                AND DEFINED DGR_${PROJECT_NAME}_REPOS_DIR))
+            set(wanted "${root_home}")
+        endif()
+
+        if(NOT wanted STREQUAL root_home)
+            make_symlink("${wanted}" "${root_home}")
+            git_ignore_entry("${wanted}")
+        endif()
+
+        if(NOT "${NAME}" IN_LIST CPM_PACKAGES)
+            CPMRegisterPackage("${NAME}" "${CMAKE_PROJECT_VERSION}")
+            cpm_store_fetch_properties("${NAME}" "${root_home}" "${CMAKE_BINARY_DIR}")
+        endif()
+
+        set(${NAME}_SOURCE_DIR "${root_home}" PARENT_SCOPE)
+        set(${NAME}_BINARY_DIR "${CMAKE_BINARY_DIR}" PARENT_SCOPE)
+        set(${NAME}_ADDED NO PARENT_SCOPE)
+        set(CPM_LAST_PACKAGE_NAME "${NAME}" PARENT_SCOPE)
+        return()
+    endif()
+
     # ------------------------------------------------------------------
     # Phase 1: FETCH, under the cross-process lock
     # ------------------------------------------------------------------
