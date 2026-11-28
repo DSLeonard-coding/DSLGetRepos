@@ -18,6 +18,9 @@ CPMUsePackageLock(${CPM_LOCK_FILE})
 
 option(DGR_LINK_RELATIVE "Create relative symlinks (survive moving the tree)" ON)
 
+# Legacy: lock files written by older versions recorded DOWNLOAD_ONLY inside the entries.
+# This version only reads GIT_REPOSITORY and GIT_TAG from an entry, so this only protects
+# plain (non-dsl) CPMAddPackage(NAME x) callers.  Safe to delete once locks are regenerated.
 function(_dgr_strip_all_download_only)
     get_cmake_property(vars VARIABLES)
     foreach(var IN LISTS vars)
@@ -119,15 +122,33 @@ endfunction()
 # _dsl_repo_impl(NAME REPO TAG DOWNLOAD_ONLY_MODE [DIR] CPM_ARGS)
 #
 # The real source (the "home") is always ${DGR_REPOS_DIR}/${NAME}, or the user's
-# CPM_<NAME>_SOURCE if set.  It is returned in ${NAME}_SOURCE_DIR.
+# CPM_<NAME>_SOURCE (CMake variable or environment) if set.  It is returned in
+# ${NAME}_SOURCE_DIR.
 #
 # DIR (or, if not given, DGR_<PROJECT_NAME>_REPOS_DIR}/${NAME} when that variable is set)
 # is where the calling project wants the repo to appear.  If that is not the home,
 # it becomes a symlink to the home.  Relative paths are relative to the calling
 # CMakeLists.txt (CMAKE_CURRENT_SOURCE_DIR).
 #
+# CPM sees three names for one package:
+#   ${NAME}        a facade.  Registered with CPM after the fetch, with the fetched
+#                  directories stored, so a plain CPMAddPackage(NAME ${NAME}) elsewhere
+#                  returns early with the right ${NAME}_SOURCE_DIR.  CPM never fetches it.
+#   ${NAME}_FETCH  the DOWNLOAD_ONLY clone/update of ${home}.  Always DOWNLOAD_ONLY, always
+#                  FORCE (CPM's override, declaration and find_package handling are bypassed;
+#                  this file does them).  Lock recording is off for it.
+#   ${NAME}_BUILD  the add_subdirectory (dsl_add_repo only).
+#
+# Package identity is ${NAME}. A package-lock entry for ${NAME} overrides the
+# call site's REPO and TAG (canonical_url / effective_tag) and is written to
+# the build's lock entry.
+#
+# fetch_url is the local URL used to actually reach the repo (for example,
+# using SSH instead of HTTPS locally) without changing what gets recorded in
+# the lock file.
+
 # Two phases:
-#  1. FETCH (locked): always a DOWNLOAD_ONLY clone/update of ${home}, plus symlink and
+#  1. FETCH (locked): the ${NAME}_FETCH clone/update of ${home}, plus symlink and
 #     .gitignore upkeep.  Nothing here recurses into other dsl_* calls, so the lock
 #     can never be re-entered.
 #  2. ADD (unlocked, dsl_add_repo only): registered with CPM as ${NAME}_BUILD pointing
@@ -136,9 +157,6 @@ endfunction()
 #     work: CPM registers the name before add_subdirectory, so the cycle stops at its
 #     "already added" return.
 #
-# Get-then-add: CPM treats a DOWNLOAD_ONLY package as already added, so a later add
-# under the same name would never call add_subdirectory.  Hence the ${NAME}_BUILD
-# registration.  The URL/tag are not used for that call.
 # OPTIONS: only dsl_add_repo applies them, and the first add wins.
 function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
     # where real sources live: only a cache value (-DDGR_REPOS_DIR=...) can move it
@@ -148,8 +166,14 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         set(store "${CMAKE_SOURCE_DIR}/deps")
     endif()
 
+    # CPM's own handling is bypassed for ${NAME}_FETCH, so read the environment form of
+    # the override here, as CPM would
+    if(NOT DEFINED CPM_${NAME}_SOURCE AND DEFINED ENV{CPM_${NAME}_SOURCE})
+        file(TO_CMAKE_PATH "$ENV{CPM_${NAME}_SOURCE}" CPM_${NAME}_SOURCE)
+    endif()
+
     # where the real source lives: user override, else the one top-level store
-    if(DEFINED CPM_${NAME}_SOURCE)
+    if(NOT "${CPM_${NAME}_SOURCE}" STREQUAL "")
         set(home "${CPM_${NAME}_SOURCE}")
         set(overridden TRUE)
     else()
@@ -188,8 +212,7 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
     if(DEFINED CMAKE_PROJECT_NAME AND "${NAME}" STREQUAL "${CMAKE_PROJECT_NAME}")
         set(root_home "${CMAKE_SOURCE_DIR}")
 
-        # `wanted` : default to
-        # "where it already is", so a link is made only if DIR or
+        # `wanted` defaults to "where it already is", so a link is made only if DIR or
         # DGR_<PROJECT_NAME>_REPOS_DIR asked for one.
         if(NOT DEFINED _dgr_DIR AND NOT (DEFINED PROJECT_NAME
                 AND DEFINED DGR_${PROJECT_NAME}_REPOS_DIR))
@@ -213,6 +236,24 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         return()
     endif()
 
+    # Identity: a lock entry for NAME wins over the call (URL and tag).  Other fields of the
+    # entry are not applied; the call's own extra args are.
+    set(canonical_url "${REPO}")
+    set(effective_tag "${TAG}")
+    if(NOT "${CPM_DECLARATION_${NAME}}" STREQUAL "")
+        cmake_parse_arguments(_dgr_decl "" "GIT_REPOSITORY;GIT_TAG" "" ${CPM_DECLARATION_${NAME}})
+        if(NOT "${_dgr_decl_GIT_REPOSITORY}" STREQUAL "")
+            set(canonical_url "${_dgr_decl_GIT_REPOSITORY}")
+        endif()
+        if(NOT "${_dgr_decl_GIT_TAG}" STREQUAL "")
+            set(effective_tag "${_dgr_decl_GIT_TAG}")
+        endif()
+    endif()
+
+    # Access: how we reach the repo.  Today the same as the identity; this is the seam
+    # for choosing a different transport (ssh) locally without touching what gets recorded.
+    set(fetch_url "${canonical_url}")
+
     # ------------------------------------------------------------------
     # Phase 1: FETCH, under the cross-process lock
     # ------------------------------------------------------------------
@@ -227,46 +268,75 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
         message(FATAL_ERROR "dsl_get_repo: timed out waiting for ${_lockfile}")
     endif()
 
-    if(overridden OR EXISTS "${home}/.developing")
-        # user-supplied or in-development source: CPM must not touch it
-        set(CPM_${NAME}_SOURCE "${home}")
-    else()
-        # anything else CPM manages, so it updates when the locks (shas) say to
-        is_git_repo("${home}" valid_clone)
-        if(NOT valid_clone)
-            # folder missing or unusable: drop this build dir's stale record, then clone
-            string(TOLOWER "${NAME}" lower_name)
-            file(REMOVE_RECURSE "${CMAKE_BINARY_DIR}/_deps/${lower_name}-subbuild")
-        endif()
-    endif()
-
-    # The declaration replaces this call's args, so put the fetch mode back.
-    # The fetch is always DOWNLOAD_ONLY, whether the caller is get or add.
-    if(NOT "${CPM_DECLARATION_${NAME}}" STREQUAL "")
-        list(APPEND CPM_DECLARATION_${NAME} DOWNLOAD_ONLY YES)
-    endif()
+    # CPM must not record the _FETCH and _BUILD names.  Remember whether recording is on,
+    # and write the entry for NAME ourselves.  (Function scope: callers are unaffected.)
+    set(_record_in_lock "${CPM_PACKAGE_LOCK_ENABLED}")
+    set(CPM_PACKAGE_LOCK_ENABLED FALSE)
 
     set(first_registration FALSE)
     if(NOT "${NAME}" IN_LIST CPM_PACKAGES)
         set(first_registration TRUE)
     endif()
 
-    CPMAddPackage(
-            NAME ${NAME}
-            GIT_REPOSITORY ${REPO}
-            GIT_TAG ${TAG}
-            SOURCE_DIR "${home}"
-            DOWNLOAD_ONLY YES
-            ${_dgr_UNPARSED_ARGUMENTS})
+    if(first_registration)
+        if(overridden OR EXISTS "${home}/.developing")
+            # user-supplied or in-development source: CPM must not touch it, so no
+            # repo/tag is passed and nothing is cloned or updated
+            CPMAddPackage(
+                    NAME ${NAME}_FETCH
+                    SOURCE_DIR "${home}"
+                    DOWNLOAD_ONLY YES
+                    FORCE YES)
+        else()
+            # anything else CPM manages, so it updates when the locks (shas) say to
+            is_git_repo("${home}" valid_clone)
+            if(NOT valid_clone)
+                # folder missing or unusable: drop this build dir's stale record, then clone
+                if(DEFINED FETCHCONTENT_BASE_DIR)
+                    set(_fc_base "${FETCHCONTENT_BASE_DIR}")
+                else()
+                    set(_fc_base "${CMAKE_BINARY_DIR}/_deps")
+                endif()
+                string(TOLOWER "${NAME}_fetch" _lower_fetch)
+                file(REMOVE_RECURSE "${_fc_base}/${_lower_fetch}-subbuild")
+            endif()
+
+            CPMAddPackage(
+                    NAME ${NAME}_FETCH
+                    GIT_REPOSITORY ${fetch_url}
+                    GIT_TAG ${effective_tag}
+                    SOURCE_DIR "${home}"
+                    DOWNLOAD_ONLY YES
+                    FORCE YES        # skip CPM's override, declaration and find_package handling
+                    ${_dgr_UNPARSED_ARGUMENTS})
+        endif()
+
+        # the facade: NAME is now "added" as far as CPM and everyone else can tell
+        CPMGetPackageVersion("${NAME}_FETCH" _fetch_version)
+        CPMRegisterPackage("${NAME}" "${_fetch_version}")
+        cpm_store_fetch_properties("${NAME}" "${${NAME}_FETCH_SOURCE_DIR}" "${${NAME}_FETCH_BINARY_DIR}")
+        set(${NAME}_SOURCE_DIR "${${NAME}_FETCH_SOURCE_DIR}")
+        set(${NAME}_BINARY_DIR "${${NAME}_FETCH_BINARY_DIR}")
+        set(${NAME}_ADDED YES)
+
+        # what CPM would have recorded for NAME: the identity, not the access URL
+        if(_record_in_lock)
+            cpm_add_to_package_lock(${NAME}
+                    NAME ${NAME}
+                    GIT_REPOSITORY ${canonical_url}
+                    GIT_TAG ${effective_tag}
+                    ${_dgr_UNPARSED_ARGUMENTS})
+        endif()
+
+        set_property(GLOBAL PROPERTY DGR_FETCHED_${NAME} TRUE)
+    else()
+        # already registered (by us earlier, or by a plain CPMAddPackage): reuse its record
+        cpm_get_fetch_properties("${NAME}")
+        set(${NAME}_ADDED NO)
+    endif()
 
     if(EXISTS "${home}/.developing")
         message(WARNING "The override is set by the existence of ${home}/.developing\n Delete it to allow auto update." )
-    endif()
-
-    # Only claim the name if we registered it.  If someone else (a plain CPMAddPackage)
-    # got there first, the fetch above was a no-op and the name is not ours to re-add.
-    if(first_registration)
-        set_property(GLOBAL PROPERTY DGR_FETCHED_${NAME} TRUE)
     endif()
 
     if(NOT overridden)
@@ -282,19 +352,17 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
     file(LOCK "${_lockfile}" RELEASE)
 
     # ------------------------------------------------------------------
-    # Phase 2: ADD, no lock held
+    # Phase 2: ADD, no lock held  (CPM_PACKAGE_LOCK_ENABLED is still off in this scope)
     # ------------------------------------------------------------------
     set(pkg "${NAME}")
     get_property(fetched GLOBAL PROPERTY DGR_FETCHED_${NAME})
     if(NOT DOWNLOAD_ONLY_MODE AND fetched)
-        # Add what CPM actually fetched (env override, lock declaration, local package)
+        # Add what was actually fetched (override, local source)
         set(src "${${NAME}_SOURCE_DIR}")
         if(src STREQUAL "" OR NOT IS_DIRECTORY "${src}")
-            message(WARNING "dsl_add_repo: nothing to add for ${NAME} "
-                    "(no source dir; found via find_package?)")
+            message(WARNING "dsl_add_repo: nothing to add for ${NAME} (no source dir)")
         else()
             set(pkg "${NAME}_BUILD")
-            set(CPM_PACKAGE_LOCK_ENABLED FALSE)
 
             # Pin the binary dir to the one phase 1 reported, so it is known before the
             # add starts (a cycle re-entering mid-add can't see CPM's own record yet).
@@ -303,6 +371,8 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
                 set(bin_args BINARY_DIR "${${NAME}_BINARY_DIR}")
             endif()
 
+            # CPM registers ${pkg} before add_subdirectory, so a cycle back to this name
+            # hits CPM's "already added" return instead of recursing.  First add wins.
             CPMAddPackage(
                     NAME ${pkg}
                     SOURCE_DIR "${src}"
@@ -311,6 +381,7 @@ function(_dsl_repo_impl NAME REPO TAG DOWNLOAD_ONLY_MODE)
                     FORCE YES        # skip CPM's find_package(${pkg}) lookup
                     ${_dgr_UNPARSED_ARGUMENTS})
             if(${pkg}_ADDED)
+                # restore the find_package(NAME) redirect that a plain add would make
                 cpm_create_module_file(${NAME})
             endif()
         endif()
